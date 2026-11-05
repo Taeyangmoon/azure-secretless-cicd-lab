@@ -1,0 +1,77 @@
+name: Build and Deploy (secretless)
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/deploy.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["app/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test
+        working-directory: app
+        run: npm test
+
+      - name: Write build info
+        working-directory: app
+        run: |
+          cat > build-info.json <<EOF
+          {
+            "commit": "${GITHUB_SHA::7}",
+            "runId": "${GITHUB_RUN_ID}",
+            "actor": "${GITHUB_ACTOR}",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: app/
+
+  deploy:
+    # PR에서는 배포하지 않습니다 / No deployment on pull requests
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC 토큰 발급 허용 / allow requesting the OIDC token
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: app
+
+      # 저장된 비밀 없음: ID 값은 비밀이 아니므로 Variables 사용
+      # No stored secret: these IDs are not secrets, so we use Variables
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: app
+
+      - name: Azure logout
+        if: always()
+        run: az logout
