@@ -38,6 +38,7 @@ Key idea: you pre-register (Federated Credential) in Azure that **"a workflow fr
 
 ```
 .
+├── .devcontainer/               # Codespaces dev environment (az, gh, Node 20)
 ├── app/                         # Sample Node.js app (no external dependencies)
 ├── .github/workflows/deploy.yml # build → test → OIDC login → deploy
 ├── scripts/setup-azure.sh       # (optional) automates the Azure setup
@@ -48,7 +49,7 @@ Key idea: you pre-register (Federated Credential) in Azure that **"a workflow fr
 
 - An Azure subscription (permission to create resources **and register Entra ID apps**; subscription `Owner` or `User Access Administrator` is needed to assign roles)
 - A GitHub account
-- [Azure Cloud Shell](https://shell.azure.com) (Bash) or local `az` CLI 2.60+ (already `az login`-ed)
+- **GitHub Codespaces (recommended)** — a dev environment with `az`, `gh`, and Node.js 20 preinstalled is set up automatically. (Alternatives: [Azure Cloud Shell](https://shell.azure.com) or a local `az` CLI 2.60+)
 
 ## 4. Lab
 
@@ -59,16 +60,29 @@ Key idea: you pre-register (Federated Credential) in Azure that **"a workflow fr
 
 > Forked repos have Actions disabled by default. Open the **Actions** tab and click *I understand my workflows, go ahead and enable them*.
 
+**Open Codespaces:** in your own repo click **Code → Codespaces → Create codespace on main**. (Open it from **your copy**, not the template original.)
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Taeyangmoon/azure-secretless-cicd-lab) ← only for quickly browsing the original repo
+
+In the Codespaces terminal, log in to Azure (no browser pop-up there, so use the device code flow).
+
+```bash
+az login --use-device-code
+az account show -o table      # confirm it's the right subscription
+```
+
+> 💡 To preview the app locally, run `cd app && npm start` and open the port 8080 link from the notification.
+
 Prepare variables in your terminal (used by every command below).
 
 ```bash
-GITHUB_REPO="<OWNER>/<REPO>"
+GITHUB_REPO="${GITHUB_REPOSITORY:-<OWNER>/<REPO>}"   # auto-filled in Codespaces
 RG="rg-secretless-lab"
 LOCATION="koreacentral"
 APP_NAME="secretless-lab-$RANDOM$RANDOM"   # must be globally unique
 ```
 
-> ⚡ **Shortcut:** to do Steps 1–3 at once, run `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh` and jump to Step 4. To really understand the flow, we recommend doing them one by one.
+> ⚡ **Shortcut:** to do Steps 1–3 at once, run `./scripts/setup-azure.sh` (outside Codespaces: `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh`) and jump to Step 4. To really understand the flow, we recommend doing them one by one.
 
 ### Step 1. Create the Azure Web App
 
@@ -135,6 +149,8 @@ echo "AZURE_WEBAPP_NAME     = $APP_NAME"
 In your repo go to **Settings → Secrets and variables → Actions → Variables tab → New repository variable** and add the four values.
 
 Or with the `gh` CLI:
+
+> ⚠️ The default `GITHUB_TOKEN` in Codespaces can't create Variables. First run `unset GITHUB_TOKEN && gh auth login -h github.com -p https -w`, or use the web UI above.
 
 ```bash
 gh variable set AZURE_CLIENT_ID       --body "$CLIENT_ID" -R $GITHUB_REPO

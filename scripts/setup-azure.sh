@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Azure 리소스 + OIDC(Federated Credential) 설정 스크립트 / Provision Azure resources + OIDC federation
 # 사용법 / Usage:
-#   GITHUB_REPO=<owner>/<repo> ./scripts/setup-azure.sh
+#   GITHUB_REPO=<owner>/<repo> ./scripts/setup-azure.sh   (Codespaces: ./scripts/setup-azure.sh)
 # 선택 환경변수 / Optional env: APP_NAME, RG, LOCATION, SKU, BRANCH
 set -euo pipefail
 
+# Codespaces에서는 GITHUB_REPOSITORY가 자동 설정됨 / set automatically in Codespaces
+GITHUB_REPO="${GITHUB_REPO:-${GITHUB_REPOSITORY:-}}"
 : "${GITHUB_REPO:?Set GITHUB_REPO=<owner>/<repo>}"
 RG="${RG:-rg-secretless-lab}"
 LOCATION="${LOCATION:-koreacentral}"

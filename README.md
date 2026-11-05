@@ -38,6 +38,7 @@ sequenceDiagram
 
 ```
 .
+├── .devcontainer/               # Codespaces 개발 환경 (az, gh, Node 20)
 ├── app/                         # 샘플 Node.js 앱 (외부 의존성 없음)
 ├── .github/workflows/deploy.yml # 빌드 → 테스트 → OIDC 로그인 → 배포
 ├── scripts/setup-azure.sh       # (선택) Azure 설정 자동화 스크립트
@@ -48,7 +49,7 @@ sequenceDiagram
 
 - Azure 구독 (리소스 생성 및 **Entra ID 앱 등록** 권한, 구독 `Owner` 또는 `User Access Administrator` 필요)
 - GitHub 계정
-- [Azure Cloud Shell](https://shell.azure.com) (Bash) 또는 로컬 `az` CLI 2.60+ (`az login` 완료)
+- **GitHub Codespaces (권장)** — `az`, `gh`, Node.js 20이 미리 설치된 개발 환경이 자동으로 구성됩니다. (대안: [Azure Cloud Shell](https://shell.azure.com) 또는 로컬 `az` CLI 2.60+)
 
 ## 4. 실습
 
@@ -59,16 +60,29 @@ sequenceDiagram
 
 > Fork한 저장소는 보안상 Actions가 꺼져 있습니다. **Actions** 탭에서 *I understand my workflows, go ahead and enable them* 을 눌러 활성화하세요.
 
+**Codespaces 열기:** 내 저장소에서 **Code → Codespaces → Create codespace on main** 을 클릭합니다. (템플릿 원본이 아니라 **본인이 만든 저장소**에서 여세요.)
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Taeyangmoon/azure-secretless-cicd-lab) ← 원본 저장소에서 바로 열어 둘러볼 때만 사용
+
+Codespaces 터미널에서 Azure에 로그인합니다 (브라우저 팝업이 없으므로 device code 방식 사용).
+
+```bash
+az login --use-device-code
+az account show -o table      # 올바른 구독인지 확인
+```
+
+> 💡 앱을 로컬에서 미리 보려면 `cd app && npm start` 후 알림의 포트 8080 링크를 여세요.
+
 터미널에서 변수를 준비합니다 (이후 모든 명령에서 사용).
 
 ```bash
-GITHUB_REPO="<OWNER>/<REPO>"
+GITHUB_REPO="${GITHUB_REPOSITORY:-<OWNER>/<REPO>}"   # Codespaces에서는 자동으로 채워짐
 RG="rg-secretless-lab"
 LOCATION="koreacentral"
 APP_NAME="secretless-lab-$RANDOM$RANDOM"   # 전역에서 유일해야 함
 ```
 
-> ⚡ **빠른 길:** Step 1~3을 한 번에 끝내려면 `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh` 를 실행하고 Step 4로 가세요. 원리를 이해하려면 아래를 한 단계씩 따라 하길 권장합니다.
+> ⚡ **빠른 길:** Step 1~3을 한 번에 끝내려면 `./scripts/setup-azure.sh` (Codespaces 외 환경에서는 `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh`) 를 실행하고 Step 4로 가세요. 원리를 이해하려면 아래를 한 단계씩 따라 하길 권장합니다.
 
 ### Step 1. Azure Web App 만들기
 
@@ -135,6 +149,8 @@ echo "AZURE_WEBAPP_NAME     = $APP_NAME"
 GitHub 저장소 → **Settings → Secrets and variables → Actions → Variables 탭 → New repository variable** 로 위 4개를 등록합니다.
 
 또는 `gh` CLI:
+
+> ⚠️ Codespaces의 기본 `GITHUB_TOKEN` 은 Variables를 만들 권한이 없습니다. 먼저 `unset GITHUB_TOKEN && gh auth login -h github.com -p https -w` 로 로그인하거나, 위의 웹 UI 방법을 사용하세요.
 
 ```bash
 gh variable set AZURE_CLIENT_ID       --body "$CLIENT_ID" -R $GITHUB_REPO
