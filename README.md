@@ -103,11 +103,15 @@ GitHub Actions가 Azure에서 사용할 "신원(Identity)"을 만들고, **어�
 CLIENT_ID=$(az ad app create --display-name "sp-github-$APP_NAME" --query appId -o tsv)
 az ad sp create --id $CLIENT_ID
 
-# 2) Federated Credential: "이 repo의 main 브랜치를 신뢰한다"
+# 2) subject prefix 조회 (신규 저장소는 repo:<OWNER>@<ID>/<REPO>@<ID> 처럼 불변 ID가 포함될 수 있음)
+SUB_PREFIX=$(gh api repos/$GITHUB_REPO/actions/oidc/customization/sub --jq .sub_claim_prefix 2>/dev/null || echo "repo:$GITHUB_REPO")
+echo $SUB_PREFIX
+
+# 3) Federated Credential: "이 repo의 main 브랜치를 신뢰한다"
 az ad app federated-credential create --id $CLIENT_ID --parameters '{
   "name": "github-main",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:'$GITHUB_REPO':ref:refs/heads/main",
+  "subject": "'$SUB_PREFIX':ref:refs/heads/main",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 ```
@@ -200,7 +204,7 @@ Federated Credential이 **브랜치까지 정확히** 확인한다는 걸 직접
 2. `deploy` 잡이 `AADSTS700213: No matching federated identity record found` 오류로 **실패**합니다. subject가 `...refs/heads/test-branch` 로 등록되지 않았기 때문입니다. 
 3. 이것이 secretless의 보안 이점입니다. 허용하지 않은 브랜치/포크에서는 토큰이 있어도 Azure에 로그인할 수 없습니다.
 
-더 엄격하게 하려면 GitHub **Environment**(예: `production`, 승인 필요)를 만들고 subject를 `repo:<OWNER>/<REPO>:environment:production` 으로 등록한 뒤 deploy 잡에 `environment: production` 을 추가하세요.
+더 엄격하게 하려면 GitHub **Environment**(예: `production`, 승인 필요)를 만들고 subject를 `$SUB_PREFIX:environment:production` 으로 등록한 뒤 deploy 잡에 `environment: production` 을 추가하세요.
 
 ## 5. 정리 (비용 방지)
 
@@ -215,7 +219,7 @@ az group delete -n $RG --yes --no-wait
 
 | 증상 | 원인 / 해결 |
 |---|---|
-| `AADSTS700213` / `No matching federated identity record` | subject 불일치. `GITHUB_REPO` 대소문자, 브랜치명, environment 사용 여부 확인 |
+| `AADSTS700213` / `No matching federated identity record` | subject 불일치. 실패 로그의 `presented assertion subject '...'` 값과 등록한 subject를 비교하세요. 신규 저장소는 `repo:<OWNER>@<ID>/<REPO>@<ID>` 형태(불변 ID)일 수 있습니다 (`SUB_PREFIX` 조회 참고). 대소문자, 브랜치명, environment 사용 여부도 확인 |
 | `Error: Login failed … client-id` 가 비어 있음 | Variables 4개 등록 확인 (Secrets 탭이 아닌 **Variables** 탭) |
 | `AuthorizationFailed` | 역할 할당 전파에 최대 몇 분 소요. 잠시 후 재실행. scope가 올바른 Web App인지 확인 |
 | `Unable to get ACTIONS_ID_TOKEN_REQUEST_URL` | deploy 잡에 `permissions: id-token: write` 가 없음 |

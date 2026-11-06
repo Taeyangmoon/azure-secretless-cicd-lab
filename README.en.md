@@ -103,11 +103,15 @@ Create the "identity" GitHub Actions will use in Azure, and register **which Git
 CLIENT_ID=$(az ad app create --display-name "sp-github-$APP_NAME" --query appId -o tsv)
 az ad sp create --id $CLIENT_ID
 
-# 2) Federated Credential: "trust the main branch of this repo"
+# 2) Look up the subject prefix (new repos may include immutable IDs, e.g. repo:<OWNER>@<ID>/<REPO>@<ID>)
+SUB_PREFIX=$(gh api repos/$GITHUB_REPO/actions/oidc/customization/sub --jq .sub_claim_prefix 2>/dev/null || echo "repo:$GITHUB_REPO")
+echo $SUB_PREFIX
+
+# 3) Federated Credential: "trust the main branch of this repo"
 az ad app federated-credential create --id $CLIENT_ID --parameters '{
   "name": "github-main",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:'$GITHUB_REPO':ref:refs/heads/main",
+  "subject": "'$SUB_PREFIX':ref:refs/heads/main",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 ```
@@ -200,7 +204,7 @@ See for yourself that the Federated Credential checks the **exact branch**.
 2. The `deploy` job **fails** with `AADSTS700213: No matching federated identity record found`, because the subject `...refs/heads/test-branch` was never registered.
 3. This is the security benefit of secretless: from a branch or fork you haven't allowed, you can't log in to Azure.
 
-For stricter control, create a GitHub **Environment** (e.g. `production` with required reviewers), register the subject `repo:<OWNER>/<REPO>:environment:production`, and add `environment: production` to the deploy job.
+For stricter control, create a GitHub **Environment** (e.g. `production` with required reviewers), register the subject `$SUB_PREFIX:environment:production`, and add `environment: production` to the deploy job.
 
 ## 5. Clean up (avoid charges)
 
@@ -215,7 +219,7 @@ az group delete -n $RG --yes --no-wait
 
 | Symptom | Cause / Fix |
 |---|---|
-| `AADSTS700213` / `No matching federated identity record` | Subject mismatch. Check `GITHUB_REPO` casing, branch name, and whether an environment is used |
+| `AADSTS700213` / `No matching federated identity record` | Subject mismatch. Compare the `presented assertion subject '...'` in the failed log with what you registered. New repos may use the immutable-ID form `repo:<OWNER>@<ID>/<REPO>@<ID>` (see the `SUB_PREFIX` lookup). Also check casing, branch name, and whether an environment is used |
 | `Login failed` with empty `client-id` | Make sure the 4 values are in the **Variables** tab (not Secrets) |
 | `AuthorizationFailed` | Role assignment can take a few minutes to propagate. Re-run later; check the scope is the right Web App |
 | `Unable to get ACTIONS_ID_TOKEN_REQUEST_URL` | The deploy job is missing `permissions: id-token: write` |

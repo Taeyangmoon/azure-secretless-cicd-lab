@@ -16,6 +16,11 @@ APP_NAME="${APP_NAME:-secretless-lab-$RANDOM$RANDOM}"
 PLAN="plan-$APP_NAME"
 IDENTITY_NAME="sp-github-$APP_NAME"
 
+# 신규 저장소는 subject에 불변 ID가 포함될 수 있음 (예: repo:owner@123/name@456). API로 실제 prefix 조회
+# New repos may use an immutable-ID subject (e.g. repo:owner@123/name@456); query the real prefix via the API
+SUB_PREFIX=$(gh api "repos/$GITHUB_REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix 2>/dev/null || true)
+SUB_PREFIX="${SUB_PREFIX:-repo:$GITHUB_REPO}"
+
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 TENANT_ID=$(az account show --query tenantId -o tsv)
 
@@ -36,7 +41,7 @@ cat > "$CRED_FILE" <<EOF
 {
   "name": "github-$BRANCH",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:$GITHUB_REPO:ref:refs/heads/$BRANCH",
+  "subject": "$SUB_PREFIX:ref:refs/heads/$BRANCH",
   "audiences": ["api://AzureADTokenExchange"]
 }
 EOF
