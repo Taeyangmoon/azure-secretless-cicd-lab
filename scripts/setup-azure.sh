@@ -22,7 +22,7 @@ TENANT_ID=$(az account show --query tenantId -o tsv)
 echo "==> 1/5 Resource group & Web App"
 az group create -n "$RG" -l "$LOCATION" -o none
 az appservice plan create -g "$RG" -n "$PLAN" --is-linux --sku "$SKU" -o none
-az webapp create -g "$RG" -p "$PLAN" -n "$APP_NAME" --runtime "NODE:20-lts" -o none
+az webapp create -g "$RG" -p "$PLAN" -n "$APP_NAME" --runtime "NODE:22-lts" -o none
 WEBAPP_ID=$(az webapp show -g "$RG" -n "$APP_NAME" --query id -o tsv)
 
 echo "==> 2/5 Entra ID app registration + service principal"

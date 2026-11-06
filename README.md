@@ -38,7 +38,7 @@ sequenceDiagram
 
 ```
 .
-├── .devcontainer/               # Codespaces 개발 환경 (az, gh, Node 20)
+├── .devcontainer/               # Codespaces 개발 환경 (az, gh, Node 22)
 ├── app/                         # 샘플 Node.js 앱 (외부 의존성 없음)
 ├── .github/workflows/deploy.yml # 빌드 → 테스트 → OIDC 로그인 → 배포
 ├── scripts/setup-azure.sh       # (선택) Azure 설정 자동화 스크립트
@@ -49,7 +49,7 @@ sequenceDiagram
 
 - Azure 구독 (리소스 생성 및 **Entra ID 앱 등록** 권한, 구독 `Owner` 또는 `User Access Administrator` 필요)
 - GitHub 계정
-- **GitHub Codespaces (권장)** — `az`, `gh`, Node.js 20이 미리 설치된 개발 환경이 자동으로 구성됩니다. (대안: [Azure Cloud Shell](https://shell.azure.com) 또는 로컬 `az` CLI 2.60+)
+- **GitHub Codespaces (권장)** — `az`, `gh`, Node.js 22이 미리 설치된 개발 환경이 자동으로 구성됩니다. (대안: [Azure Cloud Shell](https://shell.azure.com) 또는 로컬 `az` CLI 2.60+)
 
 ## 4. 실습
 
@@ -89,7 +89,7 @@ APP_NAME="secretless-lab-$RANDOM$RANDOM"   # 전역에서 유일해야 함
 ```bash
 az group create -n $RG -l $LOCATION
 az appservice plan create -g $RG -n plan-$APP_NAME --is-linux --sku B1
-az webapp create -g $RG -p plan-$APP_NAME -n $APP_NAME --runtime "NODE:20-lts"
+az webapp create -g $RG -p plan-$APP_NAME -n $APP_NAME --runtime "NODE:22-lts"
 ```
 
 브라우저에서 `https://$APP_NAME.azurewebsites.net` 을 열어 기본 페이지가 뜨는지 확인합니다.

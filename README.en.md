@@ -38,7 +38,7 @@ Key idea: you pre-register (Federated Credential) in Azure that **"a workflow fr
 
 ```
 .
-├── .devcontainer/               # Codespaces dev environment (az, gh, Node 20)
+├── .devcontainer/               # Codespaces dev environment (az, gh, Node 22)
 ├── app/                         # Sample Node.js app (no external dependencies)
 ├── .github/workflows/deploy.yml # build → test → OIDC login → deploy
 ├── scripts/setup-azure.sh       # (optional) automates the Azure setup
@@ -49,7 +49,7 @@ Key idea: you pre-register (Federated Credential) in Azure that **"a workflow fr
 
 - An Azure subscription (permission to create resources **and register Entra ID apps**; subscription `Owner` or `User Access Administrator` is needed to assign roles)
 - A GitHub account
-- **GitHub Codespaces (recommended)** — a dev environment with `az`, `gh`, and Node.js 20 preinstalled is set up automatically. (Alternatives: [Azure Cloud Shell](https://shell.azure.com) or a local `az` CLI 2.60+)
+- **GitHub Codespaces (recommended)** — a dev environment with `az`, `gh`, and Node.js 22 preinstalled is set up automatically. (Alternatives: [Azure Cloud Shell](https://shell.azure.com) or a local `az` CLI 2.60+)
 
 ## 4. Lab
 
@@ -89,7 +89,7 @@ APP_NAME="secretless-lab-$RANDOM$RANDOM"   # must be globally unique
 ```bash
 az group create -n $RG -l $LOCATION
 az appservice plan create -g $RG -n plan-$APP_NAME --is-linux --sku B1
-az webapp create -g $RG -p plan-$APP_NAME -n $APP_NAME --runtime "NODE:20-lts"
+az webapp create -g $RG -p plan-$APP_NAME -n $APP_NAME --runtime "NODE:22-lts"
 ```
 
 Open `https://$APP_NAME.azurewebsites.net` and confirm the default page loads.
