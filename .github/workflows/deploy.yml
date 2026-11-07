@@ -3,10 +3,10 @@ name: Build and Deploy (secretless)
 on:
   push:
     branches: [main]
-    paths: ["app/**", ".github/workflows/deploy.yml"]
+    paths: ["app/**", "scripts/**", ".github/workflows/deploy.yml"]
   pull_request:
     branches: [main]
-    paths: ["app/**"]
+    paths: ["app/**", "scripts/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
 
 permissions:
@@ -22,9 +22,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Test
-        working-directory: app
-        run: npm test
+      - name: Test app and setup script
+        run: |
+          npm --prefix app test
+          node --test scripts/test/*.test.js
 
       - name: Write build info
         working-directory: app
@@ -67,11 +68,51 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Web App
+        id: webapp
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           package: app
 
-      - name: Azure logout
-        if: always()
-        run: az logout
+      - name: Verify deployed app and build info
+        timeout-minutes: 5
+        env:
+          WEBAPP_URL: ${{ steps.webapp.outputs.webapp-url }}
+        run: |
+          node <<'NODE'
+          const assert = require("node:assert/strict");
+          const { setTimeout: delay } = require("node:timers/promises");
+
+          async function verify() {
+            for (let attempt = 1; attempt <= 12; attempt++) {
+              try {
+                const responses = await Promise.all(
+                  ["/healthz", "/api/info", "/"].map((path) =>
+                    fetch(new URL(path, process.env.WEBAPP_URL), {
+                      signal: AbortSignal.timeout(10000),
+                    })
+                  )
+                );
+                for (const response of responses) {
+                  assert.equal(response.status, 200, response.url);
+                }
+                assert.equal(await responses[0].text(), "ok");
+                const info = await responses[1].json();
+                assert.equal(info.commit, process.env.GITHUB_SHA.slice(0, 7));
+                assert.equal(info.runId, process.env.GITHUB_RUN_ID);
+                const html = await responses[2].text();
+                assert.ok(html.includes(info.commit) && html.includes(info.runId));
+                console.log(`Verified ${process.env.WEBAPP_URL}: commit ${info.commit}, run ${info.runId}`);
+                return;
+              } catch (error) {
+                console.error(`Attempt ${attempt}/12: ${error.message}`);
+                if (attempt === 12) throw error;
+                await delay(10000);
+              }
+            }
+          }
+          verify().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE

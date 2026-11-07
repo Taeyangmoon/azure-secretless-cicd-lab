@@ -82,7 +82,7 @@ LOCATION="koreacentral"
 APP_NAME="secretless-lab-$RANDOM$RANDOM"   # 전역에서 유일해야 함
 ```
 
-> ⚡ **빠른 길:** Step 1~3을 한 번에 끝내려면 `./scripts/setup-azure.sh` (Codespaces 외 환경에서는 `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh`) 를 실행하고 Step 4로 가세요. 원리를 이해하려면 아래를 한 단계씩 따라 하길 권장합니다.
+> ⚡ **빠른 길:** Step 1~3을 한 번에 끝내려면 `./scripts/setup-azure.sh` (Codespaces 외 환경에서는 `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh`) 를 실행하고 Step 4로 가세요. `SET_GH_VARS=true`를 추가하면 Step 4의 Variables도 등록합니다 (`gh` 로그인 권한 필요). 스크립트가 출력하는 앱 이름과 정리 명령을 저장하세요. 스크립트 내부의 변수는 현재 터미널에 남지 않습니다. 원리를 이해하려면 아래를 한 단계씩 따라 하길 권장합니다.
 
 ### Step 1. Azure Web App 만들기
 
@@ -90,9 +90,10 @@ APP_NAME="secretless-lab-$RANDOM$RANDOM"   # 전역에서 유일해야 함
 az group create -n $RG -l $LOCATION
 az appservice plan create -g $RG -n plan-$APP_NAME --is-linux --sku B1
 az webapp create -g $RG -p plan-$APP_NAME -n $APP_NAME --runtime "NODE:22-lts"
+WEBAPP_URL="https://$(az webapp show -g "$RG" -n "$APP_NAME" --query defaultHostName -o tsv)"
 ```
 
-브라우저에서 `https://$APP_NAME.azurewebsites.net` 을 열어 기본 페이지가 뜨는지 확인합니다.
+브라우저에서 `$WEBAPP_URL`을 열어 기본 페이지가 뜨는지 확인합니다. 기본 호스트 이름에 고유 접미사가 포함될 수 있으므로 앱 이름만으로 URL을 조합하지 마세요.
 
 ### Step 2. Entra ID 앱 등록 + Federated Credential (⭐ 핵심)
 
@@ -104,8 +105,9 @@ CLIENT_ID=$(az ad app create --display-name "sp-github-$APP_NAME" --query appId 
 az ad sp create --id $CLIENT_ID
 
 # 2) subject prefix 조회 (신규 저장소는 repo:<OWNER>@<ID>/<REPO>@<ID> 처럼 불변 ID가 포함될 수 있음)
-SUB_PREFIX=$(gh api repos/$GITHUB_REPO/actions/oidc/customization/sub --jq .sub_claim_prefix 2>/dev/null || echo "repo:$GITHUB_REPO")
-echo $SUB_PREFIX
+SUB_PREFIX=$(gh api "repos/$GITHUB_REPO/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty') || exit 1
+SUB_PREFIX="${SUB_PREFIX:-repo:$GITHUB_REPO}"
+echo "$SUB_PREFIX"
 
 # 3) Federated Credential: "이 repo의 main 브랜치를 신뢰한다"
 az ad app federated-credential create --id $CLIENT_ID --parameters '{
@@ -188,7 +190,7 @@ deploy:
 
 1. 저장소의 `app/server.js` 의 문구를 조금 수정해 `main` 에 커밋/푸시하거나, **Actions → Build and Deploy (secretless) → Run workflow** 를 클릭합니다.
 2. Actions 탭에서 `build` → `deploy` 잡이 성공하는지 확인합니다.
-3. `https://<APP_NAME>.azurewebsites.net` 을 열어 배포된 **Commit / Run ID** 가 표시되는지 확인합니다. `/api/info`, `/healthz` 도 확인해 보세요.
+3. `$WEBAPP_URL` (자동 설정 스크립트가 출력한 URL)을 열어 배포된 **Commit / Run ID**가 표시되는지 확인합니다. `/api/info`, `/healthz`도 확인해 보세요. 워크플로는 세 경로의 HTTP 200 응답과 현재 커밋·Run ID 일치까지 자동으로 검증합니다.
 
 ### Step 7. 검증 — 정말 secretless 인가?
 
@@ -200,9 +202,11 @@ deploy:
 
 Federated Credential이 **브랜치까지 정확히** 확인한다는 걸 직접 확인해 봅니다.
 
-1. `test-branch` 브랜치를 만들고 `deploy.yml` 의 트리거를 `branches: [main, test-branch]` 로 수정하여 푸시합니다.
+1. `main`에서 `test-branch` 브랜치를 만들고 푸시합니다. **Actions → Build and Deploy (secretless) → Run workflow**에서 `test-branch`를 선택합니다 (`workflow_dispatch`는 트리거 수정 없이 다른 브랜치에서도 실행 가능).
 2. `deploy` 잡이 `AADSTS700213: No matching federated identity record found` 오류로 **실패**합니다. subject가 `...refs/heads/test-branch` 로 등록되지 않았기 때문입니다. 
 3. 이것이 secretless의 보안 이점입니다. 허용하지 않은 브랜치/포크에서는 토큰이 있어도 Azure에 로그인할 수 없습니다.
+
+체험 후 `test-branch`를 삭제하세요. `azure/login`이 종료 시 인증 캐시를 자동 정리하므로 로그인 실패 뒤 별도의 `az logout` 오류는 발생하지 않습니다.
 
 더 엄격하게 하려면 GitHub **Environment**(예: `production`, 승인 필요)를 만들고 subject를 `$SUB_PREFIX:environment:production` 으로 등록한 뒤 deploy 잡에 `environment: production` 을 추가하세요.
 
@@ -213,7 +217,10 @@ APP_NAME=$APP_NAME RG=$RG ./scripts/cleanup-azure.sh
 # 또는 수동
 az ad app delete --id $CLIENT_ID
 az group delete -n $RG --yes --no-wait
+az group wait -n "$RG" --deleted  # 삭제 완료 확인
 ```
+
+`cleanup-azure.sh`는 지정한 리소스 그룹 전체를 삭제합니다. 다른 리소스가 없는 실습 전용 그룹에서만 사용하세요. GitHub Variables도 더 이상 사용하지 않으면 삭제하세요 (Settings → Secrets and variables → Actions → Variables).
 
 ## 6. 문제 해결
 
@@ -224,6 +231,8 @@ az group delete -n $RG --yes --no-wait
 | `AuthorizationFailed` | 역할 할당 전파에 최대 몇 분 소요. 잠시 후 재실행. scope가 올바른 Web App인지 확인 |
 | `Unable to get ACTIONS_ID_TOKEN_REQUEST_URL` | deploy 잡에 `permissions: id-token: write` 가 없음 |
 | `az ad app create` 권한 오류 | Entra ID 앱 등록 권한 필요. 테넌트 관리자에게 문의하거나 개인 구독 사용 |
+| OIDC 설정 조회가 `HTTP 403` 등으로 실패 | `gh auth status`와 저장소 접근 권한 확인. API 실패를 기본 subject로 대체하지 말고 권한을 해결한 뒤 다시 실행 |
+| 설정 스크립트의 역할 할당이 5회 모두 실패 | 스크립트는 오류로 종료합니다. 구독의 역할 할당 권한과 오류 메시지를 확인하고 생성된 실습 리소스는 출력된 정리 명령으로 삭제 |
 | F1 플랜 생성 실패 | 구독 쿼터 문제. `SKU=B1` 사용 |
 | Fork 저장소에서 워크플로가 안 돎 | Actions 탭에서 워크플로 활성화 |
 

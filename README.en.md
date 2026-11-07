@@ -82,7 +82,7 @@ LOCATION="koreacentral"
 APP_NAME="secretless-lab-$RANDOM$RANDOM"   # must be globally unique
 ```
 
-> ⚡ **Shortcut:** to do Steps 1–3 at once, run `./scripts/setup-azure.sh` (outside Codespaces: `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh`) and jump to Step 4. To really understand the flow, we recommend doing them one by one.
+> ⚡ **Shortcut:** to do Steps 1–3 at once, run `./scripts/setup-azure.sh` (outside Codespaces: `GITHUB_REPO=<OWNER>/<REPO> ./scripts/setup-azure.sh`) and jump to Step 4. Add `SET_GH_VARS=true` to also register the Step 4 Variables (requires appropriate `gh` login permissions). Save the printed app name and cleanup command: variables inside the script do not persist in your terminal. To really understand the flow, we recommend doing the steps one by one.
 
 ### Step 1. Create the Azure Web App
 
@@ -90,9 +90,10 @@ APP_NAME="secretless-lab-$RANDOM$RANDOM"   # must be globally unique
 az group create -n $RG -l $LOCATION
 az appservice plan create -g $RG -n plan-$APP_NAME --is-linux --sku B1
 az webapp create -g $RG -p plan-$APP_NAME -n $APP_NAME --runtime "NODE:22-lts"
+WEBAPP_URL="https://$(az webapp show -g "$RG" -n "$APP_NAME" --query defaultHostName -o tsv)"
 ```
 
-Open `https://$APP_NAME.azurewebsites.net` and confirm the default page loads.
+Open `$WEBAPP_URL` and confirm the default page loads. The default hostname can include a unique suffix, so do not construct the URL from the app name alone.
 
 ### Step 2. Entra ID app + Federated Credential (⭐ the core step)
 
@@ -104,8 +105,9 @@ CLIENT_ID=$(az ad app create --display-name "sp-github-$APP_NAME" --query appId 
 az ad sp create --id $CLIENT_ID
 
 # 2) Look up the subject prefix (new repos may include immutable IDs, e.g. repo:<OWNER>@<ID>/<REPO>@<ID>)
-SUB_PREFIX=$(gh api repos/$GITHUB_REPO/actions/oidc/customization/sub --jq .sub_claim_prefix 2>/dev/null || echo "repo:$GITHUB_REPO")
-echo $SUB_PREFIX
+SUB_PREFIX=$(gh api "repos/$GITHUB_REPO/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty') || exit 1
+SUB_PREFIX="${SUB_PREFIX:-repo:$GITHUB_REPO}"
+echo "$SUB_PREFIX"
 
 # 3) Federated Credential: "trust the main branch of this repo"
 az ad app federated-credential create --id $CLIENT_ID --parameters '{
@@ -188,7 +190,7 @@ There is **no** `password`, `creds` (JSON), or `publish-profile` input anywhere.
 
 1. Tweak some text in `app/server.js` and commit/push to `main`, or click **Actions → Build and Deploy (secretless) → Run workflow**.
 2. In the Actions tab, confirm the `build` and `deploy` jobs succeed.
-3. Open `https://<APP_NAME>.azurewebsites.net` and check that the deployed **Commit / Run ID** are shown. Also try `/api/info` and `/healthz`.
+3. Open `$WEBAPP_URL` (the URL printed by the setup script) and check that the deployed **Commit / Run ID** are shown. Also try `/api/info` and `/healthz`. The workflow automatically checks HTTP 200 on all three paths and that the commit and Run ID match the current deployment.
 
 ### Step 7. Verify — is it really secretless?
 
@@ -200,9 +202,11 @@ There is **no** `password`, `creds` (JSON), or `publish-profile` input anywhere.
 
 See for yourself that the Federated Credential checks the **exact branch**.
 
-1. Create a `test-branch` branch, change the trigger in `deploy.yml` to `branches: [main, test-branch]`, and push.
+1. Create `test-branch` from `main` and push it. Select `test-branch` in **Actions → Build and Deploy (secretless) → Run workflow** (`workflow_dispatch` can run on another branch without changing the push trigger).
 2. The `deploy` job **fails** with `AADSTS700213: No matching federated identity record found`, because the subject `...refs/heads/test-branch` was never registered.
 3. This is the security benefit of secretless: from a branch or fork you haven't allowed, you can't log in to Azure.
+
+Delete `test-branch` afterwards. `azure/login` automatically clears its authentication cache at job completion, so a failed login does not produce an extra `az logout` error.
 
 For stricter control, create a GitHub **Environment** (e.g. `production` with required reviewers), register the subject `$SUB_PREFIX:environment:production`, and add `environment: production` to the deploy job.
 
@@ -213,7 +217,10 @@ APP_NAME=$APP_NAME RG=$RG ./scripts/cleanup-azure.sh
 # or manually
 az ad app delete --id $CLIENT_ID
 az group delete -n $RG --yes --no-wait
+az group wait -n "$RG" --deleted  # confirm deletion has finished
 ```
+
+`cleanup-azure.sh` deletes the entire specified resource group. Use a dedicated lab group that contains no unrelated resources. Delete the GitHub Variables when they are no longer needed (Settings → Secrets and variables → Actions → Variables).
 
 ## 6. Troubleshooting
 
@@ -224,6 +231,8 @@ az group delete -n $RG --yes --no-wait
 | `AuthorizationFailed` | Role assignment can take a few minutes to propagate. Re-run later; check the scope is the right Web App |
 | `Unable to get ACTIONS_ID_TOKEN_REQUEST_URL` | The deploy job is missing `permissions: id-token: write` |
 | Permission error on `az ad app create` | You need Entra ID app registration rights. Ask your tenant admin or use a personal subscription |
+| OIDC settings lookup fails with `HTTP 403`, etc. | Check `gh auth status` and repository access. Fix the permissions instead of substituting a default subject for a failed API request |
+| All 5 setup role assignment attempts fail | The script exits with an error. Check role assignment permissions and the error message; use the printed cleanup command to remove the created lab resources |
 | F1 plan creation fails | Subscription quota issue. Use `SKU=B1` |
 | Workflow doesn't run in a fork | Enable workflows in the Actions tab |
 

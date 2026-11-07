@@ -2,7 +2,7 @@
 # Azure 리소스 + OIDC(Federated Credential) 설정 스크립트 / Provision Azure resources + OIDC federation
 # 사용법 / Usage:
 #   GITHUB_REPO=<owner>/<repo> ./scripts/setup-azure.sh   (Codespaces: ./scripts/setup-azure.sh)
-# 선택 환경변수 / Optional env: APP_NAME, RG, LOCATION, SKU, BRANCH
+# 선택 환경변수 / Optional env: APP_NAME, RG, LOCATION, SKU, BRANCH, SET_GH_VARS
 set -euo pipefail
 
 # Codespaces에서는 GITHUB_REPOSITORY가 자동 설정됨 / set automatically in Codespaces
@@ -18,12 +18,16 @@ IDENTITY_NAME="sp-github-$APP_NAME"
 
 # 신규 저장소는 subject에 불변 ID가 포함될 수 있음 (예: repo:owner@123/name@456). API로 실제 prefix 조회
 # New repos may use an immutable-ID subject (e.g. repo:owner@123/name@456); query the real prefix via the API
-SUB_PREFIX=$(gh api "repos/$GITHUB_REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix 2>/dev/null || true)
-SUB_PREFIX="${SUB_PREFIX:-repo:$GITHUB_REPO}"
+SUB_PREFIX=$(gh api "repos/$GITHUB_REPO/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty')
+if [ -z "$SUB_PREFIX" ] || [ "$SUB_PREFIX" = "null" ]; then
+  SUB_PREFIX="repo:$GITHUB_REPO"
+fi
 
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 TENANT_ID=$(az account show --query tenantId -o tsv)
 
+echo "Resource group: $RG; Web App: $APP_NAME; SKU: $SKU"
+echo "Cleanup: APP_NAME=$APP_NAME RG=$RG ./scripts/cleanup-azure.sh"
 echo "==> 1/5 Resource group & Web App"
 az group create -n "$RG" -l "$LOCATION" -o none
 az appservice plan create -g "$RG" -n "$PLAN" --is-linux --sku "$SKU" -o none
@@ -37,6 +41,7 @@ SP_OBJECT_ID=$(az ad sp show --id "$CLIENT_ID" --query id -o tsv)
 
 echo "==> 3/5 Federated credential (trust GitHub repo/branch)"
 CRED_FILE=$(mktemp)
+trap 'rm -f "$CRED_FILE"' EXIT
 cat > "$CRED_FILE" <<EOF
 {
   "name": "github-$BRANCH",
@@ -53,10 +58,15 @@ echo "==> 4/5 Role assignment (least privilege: this Web App only)"
 for i in 1 2 3 4 5; do
   if az role assignment create --assignee-object-id "$SP_OBJECT_ID" \
       --assignee-principal-type ServicePrincipal \
-      --role "Website Contributor" --scope "$WEBAPP_ID" -o none 2>/dev/null; then
+      --role "Website Contributor" --scope "$WEBAPP_ID" -o none; then
     break
   fi
-  echo "   retrying ($i/5)..."; sleep 10
+  if [ "$i" -eq 5 ]; then
+    echo "Role assignment failed after 5 attempts. Check Azure permissions before deploying." >&2
+    exit 1
+  fi
+  echo "   retrying ($i/5)..."
+  sleep 10
 done
 
 echo "==> 5/5 Done. Register these as GitHub repository *Variables* (not secrets):"
@@ -70,7 +80,7 @@ cat <<EOF
   Web App URL: https://$(az webapp show -g "$RG" -n "$APP_NAME" --query defaultHostName -o tsv)
 EOF
 
-if [ "${SET_GH_VARS:-false}" = "true" ] && command -v gh >/dev/null; then
+if [ "${SET_GH_VARS:-false}" = "true" ]; then
   gh variable set AZURE_CLIENT_ID --body "$CLIENT_ID" -R "$GITHUB_REPO"
   gh variable set AZURE_TENANT_ID --body "$TENANT_ID" -R "$GITHUB_REPO"
   gh variable set AZURE_SUBSCRIPTION_ID --body "$SUBSCRIPTION_ID" -R "$GITHUB_REPO"
