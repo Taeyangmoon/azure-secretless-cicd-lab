@@ -202,7 +202,7 @@ deploy:
 
 Federated Credential이 **브랜치까지 정확히** 확인한다는 걸 직접 확인해 봅니다.
 
-1. `main`에서 `test-branch` 브랜치를 만들고 푸시합니다. **Actions → Build and Deploy (secretless) → Run workflow**에서 `test-branch`를 선택합니다 (`workflow_dispatch`는 트리거 수정 없이 다른 브랜치에서도 실행 가능).
+1. `main`에서 `test-branch` 브랜치를 만들고, `git commit --allow-empty -m "Test OIDC trust boundary"`로 브랜치 전용 테스트 커밋을 만든 뒤 푸시합니다. 같은 커밋 SHA를 사용하면 예상된 실패 체크가 `main` 커밋에도 표시될 수 있습니다. **Actions → Build and Deploy (secretless) → Run workflow**에서 `test-branch`를 선택합니다 (`workflow_dispatch`는 트리거 수정 없이 다른 브랜치에서도 실행 가능).
 2. `deploy` 잡이 `AADSTS700213: No matching federated identity record found` 오류로 **실패**합니다. subject가 `...refs/heads/test-branch` 로 등록되지 않았기 때문입니다. 
 3. 이것이 secretless의 보안 이점입니다. 허용하지 않은 브랜치/포크에서는 토큰이 있어도 Azure에 로그인할 수 없습니다.
 

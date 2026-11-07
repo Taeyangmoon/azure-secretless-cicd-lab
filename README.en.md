@@ -202,7 +202,7 @@ There is **no** `password`, `creds` (JSON), or `publish-profile` input anywhere.
 
 See for yourself that the Federated Credential checks the **exact branch**.
 
-1. Create `test-branch` from `main` and push it. Select `test-branch` in **Actions → Build and Deploy (secretless) → Run workflow** (`workflow_dispatch` can run on another branch without changing the push trigger).
+1. Create `test-branch` from `main`, make a branch-only test commit with `git commit --allow-empty -m "Test OIDC trust boundary"`, and push it. Reusing the same commit SHA can display the expected failed check on the `main` commit too. Select `test-branch` in **Actions → Build and Deploy (secretless) → Run workflow** (`workflow_dispatch` can run on another branch without changing the push trigger).
 2. The `deploy` job **fails** with `AADSTS700213: No matching federated identity record found`, because the subject `...refs/heads/test-branch` was never registered.
 3. This is the security benefit of secretless: from a branch or fork you haven't allowed, you can't log in to Azure.
 
